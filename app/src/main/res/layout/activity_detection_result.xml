@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- FOTO HASIL SHOOT -->
+
+        <ImageView
+            android:id="@+id/imgResult"
+            android:layout_width="match_parent"
+            android:layout_height="250dp"
+            android:scaleType="centerCrop"/>
+
+        <!-- NAMA PENYAKIT (PLACEHOLDER) -->
+
+        <TextView
+            android:text="Nama Penyakit: Leaf Blight"
+            android:textStyle="bold"
+            android:textSize="20sp"
+            android:layout_marginTop="16dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <!-- DESKRIPSI -->
+
+        <TextView
+            android:text="Deskripsi: Penyakit ini menyebabkan daun menguning dan muncul bercak coklat."
+            android:layout_marginTop="10dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <!-- SOLUSI -->
+
+        <TextView
+            android:text="Solusi: Gunakan fungisida dan potong daun yang terinfeksi."
+            android:textStyle="italic"
+            android:layout_marginTop="10dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <!-- TOMBOL TUTUP -->
+
+        <Button
+            android:id="@+id/btnClose"
+            android:text="Tutup"
+            android:layout_marginTop="24dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+    </LinearLayout>
+
+</ScrollView>

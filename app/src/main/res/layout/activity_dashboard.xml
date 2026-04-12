@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="@android:color/white"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- ROW 1 : SUHU -->
+
+        <TextView
+            android:id="@+id/tvTemperature"
+            android:text="Suhu Saat Ini : 28°C"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            tools:ignore="MissingClass" />
+
+        <!-- GRAPH PLACEHOLDER -->
+
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/temperatureGraph"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:layout_marginTop="10dp"
+            tools:ignore="MissingClass" />
+
+        <!-- ROW 2 : BUTTON HISTORY -->
+
+        <Button
+            android:id="@+id/btnCameraHistory"
+            android:text="History Kamera"
+            android:layout_marginTop="20dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <!-- ROW : BUTTON Open Camera -->
+        <Button
+            android:id="@+id/btnOpenCamera"
+            android:text="Buka Kamera"
+            android:layout_marginTop="10dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <!-- ROW 3 : PANEL ALERT DINAMIS -->
+
+        <LinearLayout
+            android:id="@+id/alertContainer"
+            android:orientation="vertical"
+            android:layout_marginTop="20dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+    </LinearLayout>
+
+</ScrollView>
