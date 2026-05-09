@@ -40,6 +40,12 @@
             android:exported="false">
 
         </activity>
+        <activity
+            android:name=".DetectionHistoryActivity"
+            android:exported="false" />
+        <activity
+            android:name=".DetectionDetailActivity"
+            android:exported="false" />
 
         <activity android:name=".DetectionResultActivity" />
         <activity android:name=".CameraCaptureActivity" />
