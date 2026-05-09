@@ -1,36 +1,55 @@
-package com.kelompokhama.penyakitan;
+package com.example.penyakitan;
 
 import android.os.Bundle;
 import android.util.Log;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.Query;
+import com.google.firebase.database.ValueEventListener;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class CameraHistoryActivity extends AppCompatActivity {
 
     private RecyclerView recyclerView;
     private CameraAdapter adapter;
-    private List<CameraImage> allImages = new ArrayList<>();
 
-    private final String bucketName = "camerahama-test";
+    private TextView tvTotalHistory, tvTodayHistory, tvAlertHistory;
+
+    private final List<CameraImage> allImages = new ArrayList<>();
+
+    private DatabaseReference cameraCapturesRef;
+
+    private String labelFilter = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera_history);
+
+        labelFilter = getIntent().getStringExtra("label_filter");
+
+        if (labelFilter == null) {
+            labelFilter = "";
+        }
+
+        tvTotalHistory = findViewById(R.id.tvTotalHistory);
+        tvTodayHistory = findViewById(R.id.tvTodayHistory);
+        tvAlertHistory = findViewById(R.id.tvAlertHistory);
 
         recyclerView = findViewById(R.id.recyclerView);
         recyclerView.setLayoutManager(new GridLayoutManager(this, 3));
@@ -38,111 +57,127 @@ public class CameraHistoryActivity extends AppCompatActivity {
         adapter = new CameraAdapter(allImages);
         recyclerView.setAdapter(adapter);
 
-        loadImagesFromBucket();
+        cameraCapturesRef = FirebaseDatabase.getInstance()
+                .getReference("camera_captures");
+
+        setInitialSummary();
+
+        loadImagesFromFirebase();
     }
 
-    private void loadImagesFromBucket() {
+    private void setInitialSummary() {
+        tvTotalHistory.setText("0");
+        tvTodayHistory.setText("0");
+        tvAlertHistory.setText("0");
+    }
 
-        new Thread(() -> {
+    private void loadImagesFromFirebase() {
+        Query query = cameraCapturesRef.orderByChild("uploaded_at");
 
-            try {
-
-                String apiUrl =
-                        "https://storage.googleapis.com/storage/v1/b/"
-                                + bucketName + "/o";
-
-                URL url = new URL(apiUrl);
-
-                HttpURLConnection conn =
-                        (HttpURLConnection) url.openConnection();
-
-                conn.setRequestMethod("GET");
-
-                BufferedReader reader =
-                        new BufferedReader(
-                                new InputStreamReader(
-                                        conn.getInputStream()
-                                )
-                        );
-
-                StringBuilder result = new StringBuilder();
-                String line;
-
-                while ((line = reader.readLine()) != null) {
-                    result.append(line);
-                }
-
-                reader.close();
-
-                JSONObject jsonObject =
-                        new JSONObject(result.toString());
-
-                JSONArray items =
-                        jsonObject.getJSONArray("items");
-
+        query.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
                 allImages.clear();
 
-                for (int i = 0; i < items.length(); i++) {
+                int todayCount = 0;
+                int alertCount = 0;
 
-                    JSONObject file =
-                            items.getJSONObject(i);
+                for (DataSnapshot data : snapshot.getChildren()) {
+                    String filename = data.child("filename").getValue(String.class);
+                    String imageUrl = data.child("image").getValue(String.class);
+                    String label = data.child("label").getValue(String.class);
+                    String time = data.child("time").getValue(String.class);
+                    Long uploadedAt = data.child("uploaded_at").getValue(Long.class);
 
-                    String fileName =
-                            file.getString("name");
+                    if (label == null) {
+                        label = "";
+                    }
 
-                    if (isImage(fileName)) {
+                    if (!labelFilter.trim().isEmpty() &&
+                            !label.equalsIgnoreCase(labelFilter)) {
+                        continue;
+                    }
 
-                        String imageUrl =
-                                file.getString("mediaLink");
+                    if (filename == null || filename.trim().isEmpty()) {
+                        filename = "Foto Kamera";
+                    }
 
-                        String updated =
-                                file.optString("updated", "");
+                    if (imageUrl == null || imageUrl.trim().isEmpty()) {
+                        continue;
+                    }
 
-                        allImages.add(
-                                new CameraImage(
-                                        fileName,
-                                        imageUrl,
-                                        updated
-                                )
-                        );
+                    if (time == null || time.trim().isEmpty()) {
+                        time = "-";
+                    }
+
+                    allImages.add(new CameraImage(filename, imageUrl, time));
+
+                    if (isToday(uploadedAt)) {
+                        todayCount++;
+                    }
+
+                    if (isDetectedLabel(label)) {
+                        alertCount++;
                     }
                 }
 
                 Collections.reverse(allImages);
 
-                runOnUiThread(() -> {
-                    adapter.notifyDataSetChanged();
+                adapter.notifyDataSetChanged();
 
-                    Toast.makeText(
-                            CameraHistoryActivity.this,
-                            "Loaded " + allImages.size() + " images",
-                            Toast.LENGTH_SHORT
-                    ).show();
-                });
+                tvTotalHistory.setText(String.valueOf(allImages.size()));
+                tvTodayHistory.setText(String.valueOf(todayCount));
+                tvAlertHistory.setText(String.valueOf(alertCount));
 
-            } catch (Exception e) {
-
-                Log.e("GCP_ERROR", e.toString());
-
-                runOnUiThread(() ->
-                        Toast.makeText(
-                                CameraHistoryActivity.this,
-                                "Error: " + e.getMessage(),
-                                Toast.LENGTH_LONG
-                        ).show()
-                );
+                Log.d("FIREBASE_HISTORY", "Total data: " + allImages.size());
             }
 
-        }).start();
+            @Override
+            public void onCancelled(DatabaseError error) {
+                Toast.makeText(
+                        CameraHistoryActivity.this,
+                        "Gagal mengambil history: " + error.getMessage(),
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        });
     }
 
-    private boolean isImage(String name) {
+    private boolean isToday(Long uploadedAt) {
+        try {
+            if (uploadedAt == null) {
+                return false;
+            }
 
-        name = name.toLowerCase();
+            Date uploadedDate = new Date(uploadedAt * 1000);
 
-        return name.endsWith(".jpg") ||
-                name.endsWith(".jpeg") ||
-                name.endsWith(".png") ||
-                name.endsWith(".webp");
+            SimpleDateFormat dateFormat = new SimpleDateFormat(
+                    "yyyy-MM-dd",
+                    Locale.getDefault()
+            );
+
+            String uploadedDay = dateFormat.format(uploadedDate);
+            String today = dateFormat.format(new Date());
+
+            return uploadedDay.equals(today);
+
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isDetectedLabel(String label) {
+        if (label == null) {
+            return false;
+        }
+
+        String lowerLabel = label.toLowerCase();
+
+        return lowerLabel.contains("hama") ||
+                lowerLabel.contains("penyakit") ||
+                lowerLabel.contains("pest") ||
+                lowerLabel.contains("disease") ||
+                lowerLabel.contains("detected") ||
+                lowerLabel.contains("alert");
     }
 }

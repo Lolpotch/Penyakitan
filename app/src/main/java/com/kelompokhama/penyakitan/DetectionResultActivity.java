@@ -1,5 +1,6 @@
-package com.kelompokhama.penyakitan;
+package com.example.penyakitan;
 
+import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.view.View;
@@ -11,60 +12,52 @@ import androidx.appcompat.app.AppCompatActivity;
 
 public class DetectionResultActivity extends AppCompatActivity {
 
-    ImageView imgResult;
-    Button btnClose;
-    TextView txtStatus;
+    private ImageView imgResult;
+    private Button btnClose;
+    private TextView txtStatus;
 
-    private static DetectionResultActivity instance;
-
+    @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_detection_result);
-
-        instance = this;
 
         imgResult = findViewById(R.id.imgResult);
         btnClose = findViewById(R.id.btnClose);
         txtStatus = findViewById(R.id.txtStatus);
 
         Bitmap image = getIntent().getParcelableExtra("image");
+        int responseCode = getIntent().getIntExtra("responseCode", 0);
+        String responseMessage = getIntent().getStringExtra("responseMessage");
 
         if (image != null) {
             imgResult.setImageBitmap(image);
         }
 
-        txtStatus.setVisibility(View.GONE);
+        showUploadStatus(responseCode, responseMessage);
 
         btnClose.setOnClickListener(v -> finish());
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
+    private void showUploadStatus(int responseCode, String responseMessage) {
+        txtStatus.setVisibility(View.VISIBLE);
 
-        if (instance == this) {
-            instance = null;
+        if (responseCode == 200 || responseCode == 201) {
+            txtStatus.setText("Upload berhasil");
+            txtStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+        } else if (responseCode == 0) {
+            txtStatus.setText("Upload gagal: " + safeMessage(responseMessage));
+            txtStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+        } else {
+            txtStatus.setText("Upload gagal: " + responseCode);
+            txtStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
         }
     }
 
-    public static void showUploadError(String message) {
-
-        if (instance == null) return;
-
-        instance.runOnUiThread(() -> {
-            instance.txtStatus.setVisibility(View.VISIBLE);
-            instance.txtStatus.setText("Upload Failed: " + message);
-        });
-    }
-
-    public static void showUploadSuccess(String message) {
-
-        if (instance == null) return;
-
-        instance.runOnUiThread(() -> {
-            instance.txtStatus.setVisibility(View.VISIBLE);
-            instance.txtStatus.setText("Upload Success: " + message);
-        });
+    private String safeMessage(String message) {
+        if (message == null || message.trim().isEmpty()) {
+            return "Tidak ada response dari server";
+        }
+        return message;
     }
 }

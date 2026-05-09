@@ -1,4 +1,4 @@
-package com.kelompokhama.penyakitan;
+package com.example.penyakitan;
 
 import android.view.LayoutInflater;
 import android.view.View;
