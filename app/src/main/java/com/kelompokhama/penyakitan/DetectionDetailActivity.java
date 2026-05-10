@@ -3,21 +3,24 @@ package com.example.penyakitan;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.bumptech.glide.Glide;
 
+import java.util.Locale;
+
 public class DetectionDetailActivity extends AppCompatActivity {
 
     private ImageView imgDetail;
     private TextView tvTitle, tvDate, tvStatus;
     private TextView tvMode, tvSource, tvConfidence;
-    private TextView tvDescription, tvSolution;
-    private Button btnClose;
+    private TextView tvSolution;
+    private ProgressBar progressConfidence;
+    private TextView btnClose;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,17 +31,18 @@ public class DetectionDetailActivity extends AppCompatActivity {
         tvTitle = findViewById(R.id.tvDetailTitle);
         tvDate = findViewById(R.id.tvDetailDate);
         tvStatus = findViewById(R.id.tvDetailStatus);
+
         tvMode = findViewById(R.id.tvDetailMode);
         tvSource = findViewById(R.id.tvDetailSource);
         tvConfidence = findViewById(R.id.tvDetailConfidence);
-        tvDescription = findViewById(R.id.tvDetailDescription);
+        progressConfidence = findViewById(R.id.progress_detail_confidence);
+
         tvSolution = findViewById(R.id.tvDetailSolution);
         btnClose = findViewById(R.id.btnCloseDetail);
 
         String imageUrl = getIntent().getStringExtra("image_url");
         String diseaseName = getIntent().getStringExtra("disease_name");
         String date = getIntent().getStringExtra("date");
-        String description = getIntent().getStringExtra("description");
         String solution = getIntent().getStringExtra("solution");
         boolean handled = getIntent().getBooleanExtra("handled", false);
         String mode = getIntent().getStringExtra("mode");
@@ -48,7 +52,7 @@ public class DetectionDetailActivity extends AppCompatActivity {
         if (imageUrl != null && !imageUrl.trim().isEmpty() && !imageUrl.equals("placeholder")) {
             Glide.with(this)
                     .load(imageUrl)
-                    .centerCrop()
+                    .fitCenter()
                     .placeholder(R.drawable.plant)
                     .error(R.drawable.plant)
                     .into(imgDetail);
@@ -58,12 +62,22 @@ public class DetectionDetailActivity extends AppCompatActivity {
 
         tvTitle.setText(safeText(diseaseName, "Tidak Diketahui"));
         tvDate.setText(safeText(date, "-"));
-        tvMode.setText("Mode: " + safeText(mode, "-"));
-        tvSource.setText("Source: " + safeText(source, "-"));
-        tvConfidence.setText("Confidence: " + safeText(confidence, "0") + "%");
-        tvDescription.setText(safeText(description, "Tidak ada deskripsi."));
+        tvMode.setText(formatLabel(safeText(mode, "-")));
+        tvSource.setText(formatLabel(safeText(source, "-")));
+
+        double confidenceValue = parseConfidence(confidence);
+        tvConfidence.setText(String.format(Locale.US, "%.2f%%", confidenceValue));
+        progressConfidence.setProgress((int) Math.round(confidenceValue));
+        setConfidenceColor(confidenceValue);
+
         tvSolution.setText(safeText(solution, "Belum ada rekomendasi penanganan."));
 
+        setHandledStatus(handled);
+
+        btnClose.setOnClickListener(v -> finish());
+    }
+
+    private void setHandledStatus(boolean handled) {
         if (handled) {
             tvStatus.setText("Sudah Ditangani");
             tvStatus.setTextColor(Color.parseColor("#667085"));
@@ -77,8 +91,47 @@ public class DetectionDetailActivity extends AppCompatActivity {
                     ColorStateList.valueOf(Color.parseColor("#FEE4E2"))
             );
         }
+    }
 
-        btnClose.setOnClickListener(v -> finish());
+    private void setConfidenceColor(double confidence) {
+        int color;
+
+        if (confidence >= 80) {
+            color = Color.parseColor("#0B7A2A");
+        } else if (confidence >= 60) {
+            color = Color.parseColor("#F79009");
+        } else {
+            color = Color.parseColor("#D92D20");
+        }
+
+        tvConfidence.setTextColor(color);
+        progressConfidence.setProgressTintList(ColorStateList.valueOf(color));
+    }
+
+    private double parseConfidence(String value) {
+        try {
+            if (value == null || value.trim().isEmpty()) {
+                return 0;
+            }
+
+            return Double.parseDouble(value);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private String formatLabel(String value) {
+        if (value == null || value.trim().isEmpty() || value.equals("-")) {
+            return "-";
+        }
+
+        String cleaned = value.trim();
+
+        if (cleaned.length() == 1) {
+            return cleaned.toUpperCase();
+        }
+
+        return cleaned.substring(0, 1).toUpperCase() + cleaned.substring(1).toLowerCase();
     }
 
     private String safeText(String value, String fallback) {

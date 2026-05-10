@@ -1,7 +1,7 @@
 package com.example.penyakitan;
 
-import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -12,52 +12,76 @@ import androidx.appcompat.app.AppCompatActivity;
 
 public class DetectionResultActivity extends AppCompatActivity {
 
-    private ImageView imgResult;
-    private Button btnClose;
-    private TextView txtStatus;
+    ImageView imgResult;
+    Button btnClose;
+    TextView txtStatus;
 
-    @SuppressLint("MissingInflatedId")
+    private static DetectionResultActivity instance;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_detection_result);
 
+        instance = this;
+
         imgResult = findViewById(R.id.imgResult);
         btnClose = findViewById(R.id.btnClose);
         txtStatus = findViewById(R.id.txtStatus);
 
-        Bitmap image = getIntent().getParcelableExtra("image");
-        int responseCode = getIntent().getIntExtra("responseCode", 0);
-        String responseMessage = getIntent().getStringExtra("responseMessage");
+        String imageUriString = getIntent().getStringExtra("image_uri");
 
-        if (image != null) {
-            imgResult.setImageBitmap(image);
+        if (imageUriString != null && !imageUriString.trim().isEmpty()) {
+            Uri imageUri = Uri.parse(imageUriString);
+            imgResult.setImageURI(imageUri);
+        } else {
+            Bitmap image = getIntent().getParcelableExtra("image");
+
+            if (image != null) {
+                imgResult.setImageBitmap(image);
+            }
         }
 
-        showUploadStatus(responseCode, responseMessage);
+        int responseCode = getIntent().getIntExtra("responseCode", -1);
+        String responseMessage = getIntent().getStringExtra("responseMessage");
+
+        if (responseCode == 200 || responseCode == 201) {
+            txtStatus.setVisibility(View.VISIBLE);
+            txtStatus.setText("Upload Success");
+        } else if (responseCode != -1) {
+            txtStatus.setVisibility(View.VISIBLE);
+            txtStatus.setText("Upload Failed: " + responseMessage);
+        } else {
+            txtStatus.setVisibility(View.GONE);
+        }
 
         btnClose.setOnClickListener(v -> finish());
     }
 
-    private void showUploadStatus(int responseCode, String responseMessage) {
-        txtStatus.setVisibility(View.VISIBLE);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
 
-        if (responseCode == 200 || responseCode == 201) {
-            txtStatus.setText("Upload berhasil");
-            txtStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
-        } else if (responseCode == 0) {
-            txtStatus.setText("Upload gagal: " + safeMessage(responseMessage));
-            txtStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
-        } else {
-            txtStatus.setText("Upload gagal: " + responseCode);
-            txtStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+        if (instance == this) {
+            instance = null;
         }
     }
 
-    private String safeMessage(String message) {
-        if (message == null || message.trim().isEmpty()) {
-            return "Tidak ada response dari server";
-        }
-        return message;
+    public static void showUploadError(String message) {
+        if (instance == null) return;
+
+        instance.runOnUiThread(() -> {
+            instance.txtStatus.setVisibility(View.VISIBLE);
+            instance.txtStatus.setText("Upload Failed: " + message);
+        });
+    }
+
+    public static void showUploadSuccess(String message) {
+        if (instance == null) return;
+
+        instance.runOnUiThread(() -> {
+            instance.txtStatus.setVisibility(View.VISIBLE);
+            instance.txtStatus.setText("Upload Success: " + message);
+        });
     }
 }

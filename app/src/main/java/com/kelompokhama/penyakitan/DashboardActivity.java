@@ -1,12 +1,18 @@
 package com.example.penyakitan;
 
+import android.app.Dialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
+import android.view.Window;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -44,14 +50,16 @@ public class DashboardActivity extends AppCompatActivity {
 
     private TextView tvTemperature, tvHumidity;
     private TextView tvTemperatureStatus, tvHumidityStatus;
-    private TextView tvActiveCamera, tvPlantPoint, tvPlantCondition;
 
     private TextView tvSeeAll;
     private TextView tvSeeAllDetection;
     private TextView tvCarouselLabel;
 
+    private FrameLayout btnNotification;
+    private TextView tvNotificationBadge;
+
     private ImageButton btnOpenCamera;
-    private Button btnCaptureNow;
+    private TextView btnCaptureNow;
 
     private LineChart temperatureGraph, humidityGraph;
     private LinearLayout alertContainer;
@@ -71,7 +79,11 @@ public class DashboardActivity extends AppCompatActivity {
     private ImageView imgPlantLeft, imgPlantRight, imgPlantHp;
     private TextView tvPlantLeftTime, tvPlantRightTime, tvPlantHpTime;
     private TextView tvPlantLeftStatus, tvPlantRightStatus, tvPlantHpStatus;
+    private TextView tvPlantLeftLabel, tvPlantRightLabel, tvPlantHpLabel;
     private LinearLayout cardPlantLeft, cardPlantRight, cardPlantHp;
+
+    private static final String PREF_NOTIF = "notification_pref";
+    private static final String PREF_READ_KEYS = "read_notification_keys";
 
     private final Handler carouselHandler = new Handler(Looper.getMainLooper());
 
@@ -102,6 +114,7 @@ public class DashboardActivity extends AppCompatActivity {
         initFirebase();
         setupButton();
 
+        loadNotificationBadge();
         loadLatestCarouselImages();
         loadPlantPointCards();
         loadLatestSensorData();
@@ -117,13 +130,12 @@ public class DashboardActivity extends AppCompatActivity {
         tvTemperatureStatus = findViewById(R.id.tvTemperatureStatus);
         tvHumidityStatus = findViewById(R.id.tvHumidityStatus);
 
-        tvActiveCamera = findViewById(R.id.tvActiveCamera);
-        tvPlantPoint = findViewById(R.id.tvPlantPoint);
-        tvPlantCondition = findViewById(R.id.tvPlantCondition);
-
         tvSeeAll = findViewById(R.id.tvSeeAll);
         tvSeeAllDetection = findViewById(R.id.tvSeeAllDetection);
         tvCarouselLabel = findViewById(R.id.tvCarouselLabel);
+
+        btnNotification = findViewById(R.id.btnNotification);
+        tvNotificationBadge = findViewById(R.id.tvNotificationBadge);
 
         btnOpenCamera = findViewById(R.id.btnOpenCamera);
         btnCaptureNow = findViewById(R.id.btnCaptureNow);
@@ -159,6 +171,10 @@ public class DashboardActivity extends AppCompatActivity {
         tvPlantLeftStatus = findViewById(R.id.tvPlantLeftStatus);
         tvPlantRightStatus = findViewById(R.id.tvPlantRightStatus);
         tvPlantHpStatus = findViewById(R.id.tvPlantHpStatus);
+
+        tvPlantLeftLabel = findViewById(R.id.tvPlantLeftLabel);
+        tvPlantRightLabel = findViewById(R.id.tvPlantRightLabel);
+        tvPlantHpLabel = findViewById(R.id.tvPlantHpLabel);
 
         cardPlantLeft = findViewById(R.id.cardPlantLeft);
         cardPlantRight = findViewById(R.id.cardPlantRight);
@@ -205,6 +221,8 @@ public class DashboardActivity extends AppCompatActivity {
             startActivity(intent);
         });
 
+        btnNotification.setOnClickListener(v -> showNotificationDialog());
+
         cardPlantLeft.setOnClickListener(v -> openHistoryByLabel("A"));
         cardPlantRight.setOnClickListener(v -> openHistoryByLabel("B"));
         cardPlantHp.setOnClickListener(v -> openHistoryByLabel("HP"));
@@ -214,6 +232,446 @@ public class DashboardActivity extends AppCompatActivity {
         Intent intent = new Intent(DashboardActivity.this, CameraHistoryActivity.class);
         intent.putExtra("label_filter", label);
         startActivity(intent);
+    }
+
+    private void loadNotificationBadge() {
+        diseaseResultRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot diseaseSnapshot) {
+                sensorLatestRef.addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot sensorSnapshot) {
+                        List<NotificationItem> items = buildNotificationItems(diseaseSnapshot, sensorSnapshot);
+
+                        int unreadCount = 0;
+
+                        for (NotificationItem item : items) {
+                            if (!isNotificationRead(item.notificationKey)) {
+                                unreadCount++;
+                            }
+                        }
+
+                        updateNotificationBadge(unreadCount);
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        updateNotificationBadge(0);
+                    }
+                });
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                updateNotificationBadge(0);
+            }
+        });
+
+        sensorLatestRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot sensorSnapshot) {
+                diseaseResultRef.addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot diseaseSnapshot) {
+                        List<NotificationItem> items = buildNotificationItems(diseaseSnapshot, sensorSnapshot);
+
+                        int unreadCount = 0;
+
+                        for (NotificationItem item : items) {
+                            if (!isNotificationRead(item.notificationKey)) {
+                                unreadCount++;
+                            }
+                        }
+
+                        updateNotificationBadge(unreadCount);
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        updateNotificationBadge(0);
+                    }
+                });
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                updateNotificationBadge(0);
+            }
+        });
+    }
+
+    private void updateNotificationBadge(int count) {
+        if (tvNotificationBadge == null) return;
+
+        if (count > 0) {
+            tvNotificationBadge.setVisibility(View.VISIBLE);
+
+            if (count > 99) {
+                tvNotificationBadge.setText("99+");
+            } else {
+                tvNotificationBadge.setText(String.valueOf(count));
+            }
+        } else {
+            tvNotificationBadge.setVisibility(View.GONE);
+        }
+    }
+
+    private void showNotificationDialog() {
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_notification);
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        LinearLayout notificationListContainer = dialog.findViewById(R.id.notificationListContainer);
+        TextView tvDialogNotifCount = dialog.findViewById(R.id.tvDialogNotifCount);
+        TextView btnCloseNotification = dialog.findViewById(R.id.btnCloseNotification);
+        TextView btnMarkAllRead = dialog.findViewById(R.id.btnMarkAllRead);
+
+        btnCloseNotification.setOnClickListener(v -> dialog.dismiss());
+
+        notificationListContainer.removeAllViews();
+
+        diseaseResultRef.orderByChild("timestamp")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot diseaseSnapshot) {
+                        sensorLatestRef.addListenerForSingleValueEvent(new ValueEventListener() {
+                            @Override
+                            public void onDataChange(@NonNull DataSnapshot sensorSnapshot) {
+                                notificationListContainer.removeAllViews();
+
+                                List<NotificationItem> allItems = buildNotificationItems(diseaseSnapshot, sensorSnapshot);
+                                List<NotificationItem> unreadItems = new ArrayList<>();
+
+                                for (NotificationItem item : allItems) {
+                                    if (!isNotificationRead(item.notificationKey)) {
+                                        unreadItems.add(item);
+                                    }
+                                }
+
+                                tvDialogNotifCount.setText(String.valueOf(unreadItems.size()));
+
+                                if (unreadItems.isEmpty()) {
+                                    TextView emptyText = new TextView(DashboardActivity.this);
+                                    emptyText.setText("Tidak ada notifikasi baru.");
+                                    emptyText.setTextColor(Color.parseColor("#667085"));
+                                    emptyText.setTextSize(15);
+                                    emptyText.setGravity(android.view.Gravity.CENTER);
+                                    emptyText.setPadding(0, dpToPx(50), 0, dpToPx(50));
+
+                                    notificationListContainer.addView(emptyText);
+                                } else {
+                                    for (NotificationItem item : unreadItems) {
+                                        addNotificationItemView(notificationListContainer, item);
+                                    }
+                                }
+
+                                btnMarkAllRead.setOnClickListener(v -> {
+                                    markNotificationsAsRead(unreadItems);
+                                    dialog.dismiss();
+
+                                    updateNotificationBadge(0);
+
+                                    Toast.makeText(
+                                            DashboardActivity.this,
+                                            "Notifikasi ditandai sudah dibaca",
+                                            Toast.LENGTH_SHORT
+                                    ).show();
+                                });
+                            }
+
+                            @Override
+                            public void onCancelled(@NonNull DatabaseError error) {
+                                Toast.makeText(
+                                        DashboardActivity.this,
+                                        "Gagal memuat sensor: " + error.getMessage(),
+                                        Toast.LENGTH_LONG
+                                ).show();
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Toast.makeText(
+                                DashboardActivity.this,
+                                "Gagal memuat notifikasi: " + error.getMessage(),
+                                Toast.LENGTH_LONG
+                        ).show();
+                    }
+                });
+
+        dialog.show();
+
+        Window shownWindow = dialog.getWindow();
+        if (shownWindow != null) {
+            shownWindow.setLayout(
+                    (int) (getResources().getDisplayMetrics().widthPixels * 0.92),
+                    WindowManager.LayoutParams.WRAP_CONTENT
+            );
+        }
+    }
+
+    private List<NotificationItem> buildNotificationItems(
+            DataSnapshot diseaseSnapshot,
+            DataSnapshot sensorSnapshot
+    ) {
+        List<NotificationItem> items = new ArrayList<>();
+
+        for (DataSnapshot data : diseaseSnapshot.getChildren()) {
+            String detectionKey = data.getKey();
+
+            Boolean handled = data.child("handled").getValue(Boolean.class);
+            String status = data.child("status").getValue(String.class);
+
+            boolean isHandled = false;
+
+            if (handled != null && handled) {
+                isHandled = true;
+            }
+
+            if (status != null && status.equalsIgnoreCase("handled")) {
+                isHandled = true;
+            }
+
+            if (isHandled) {
+                continue;
+            }
+
+            String className = data.child("class_name").getValue(String.class);
+            String source = data.child("source").getValue(String.class);
+            String timestamp = data.child("timestamp").getValue(String.class);
+            Double confidenceValue = data.child("confidence").getValue(Double.class);
+
+            if (detectionKey == null || detectionKey.trim().isEmpty()) {
+                detectionKey = "unknown_detection_" + System.currentTimeMillis();
+            }
+
+            if (className == null || className.trim().isEmpty()) {
+                className = "Deteksi";
+            }
+
+            if (source == null || source.trim().isEmpty()) {
+                source = "kamera";
+            }
+
+            if (timestamp == null || timestamp.trim().isEmpty()) {
+                timestamp = "-";
+            }
+
+            double confidencePercent = 0;
+
+            if (confidenceValue != null) {
+                confidencePercent = confidenceValue * 100;
+            }
+
+            items.add(
+                    new NotificationItem(
+                            "detection_" + detectionKey,
+                            "⚠",
+                            formatClassName(className) + " Terdeteksi",
+                            "Terdeteksi dari " + source +
+                                    " dengan confidence " +
+                                    String.format(Locale.US, "%.1f", confidencePercent) + "%",
+                            formatNotificationTime(timestamp),
+                            getPriorityLabel(confidencePercent),
+                            confidencePercent
+                    )
+            );
+        }
+
+        Double suhu = sensorSnapshot.child("temperature").getValue(Double.class);
+        Double humidity = sensorSnapshot.child("humidity").getValue(Double.class);
+
+        String sensorTimestamp = sensorSnapshot.child("time").getValue(String.class);
+
+        if (sensorTimestamp == null || sensorTimestamp.trim().isEmpty()) {
+            sensorTimestamp = "-";
+        }
+
+        if (suhu != null) {
+            if (suhu < 25 || suhu > 28) {
+                String title;
+
+                if (suhu < 25) {
+                    title = "Peringatan Suhu Rendah";
+                } else {
+                    title = "Peringatan Suhu Tinggi";
+                }
+
+                items.add(
+                        new NotificationItem(
+                                "sensor_temperature_" + String.format(Locale.US, "%.1f", suhu),
+                                "🌡",
+                                title,
+                                "Suhu saat ini " + String.format(Locale.US, "%.1f", suhu) +
+                                        "°C. Batas normal: 25–28°C.",
+                                sensorTimestamp,
+                                "High",
+                                100
+                        )
+                );
+            }
+        }
+
+        if (humidity != null) {
+            if (humidity < 65 || humidity > 78) {
+                String title;
+
+                if (humidity < 65) {
+                    title = "Peringatan Kelembaban Rendah";
+                } else {
+                    title = "Peringatan Kelembaban Tinggi";
+                }
+
+                items.add(
+                        new NotificationItem(
+                                "sensor_humidity_" + String.format(Locale.US, "%.1f", humidity),
+                                "💧",
+                                title,
+                                "Kelembaban saat ini " + String.format(Locale.US, "%.1f", humidity) +
+                                        "% RH. Batas normal: 65–78% RH.",
+                                sensorTimestamp,
+                                "High",
+                                100
+                        )
+                );
+            }
+        }
+
+        Collections.reverse(items);
+
+        return items;
+    }
+
+    private void addNotificationItemView(
+            LinearLayout container,
+            NotificationItem item
+    ) {
+        View view = getLayoutInflater()
+                .inflate(R.layout.item_notification, container, false);
+
+        TextView tvNotifIcon = view.findViewById(R.id.tvNotifIcon);
+        TextView tvNotifTitle = view.findViewById(R.id.tvNotifTitle);
+        TextView tvNotifMessage = view.findViewById(R.id.tvNotifMessage);
+        TextView tvNotifTime = view.findViewById(R.id.tvNotifTime);
+        TextView tvNotifPriority = view.findViewById(R.id.tvNotifPriority);
+
+        tvNotifIcon.setText(item.icon);
+        tvNotifTitle.setText(item.title);
+        tvNotifMessage.setText(item.message);
+        tvNotifTime.setText(item.time);
+        tvNotifPriority.setText(item.priority);
+
+        container.addView(view);
+    }
+
+    private void markNotificationsAsRead(List<NotificationItem> notificationItems) {
+        if (notificationItems == null || notificationItems.isEmpty()) {
+            return;
+        }
+
+        SharedPreferences prefs = getSharedPreferences(PREF_NOTIF, MODE_PRIVATE);
+        String oldKeys = prefs.getString(PREF_READ_KEYS, "");
+
+        StringBuilder builder = new StringBuilder(oldKeys == null ? "" : oldKeys);
+
+        for (NotificationItem item : notificationItems) {
+            if (item.notificationKey == null || item.notificationKey.trim().isEmpty()) {
+                continue;
+            }
+
+            String wrappedKey = "|" + item.notificationKey + "|";
+
+            if (!builder.toString().contains(wrappedKey)) {
+                builder.append(wrappedKey);
+            }
+        }
+
+        prefs.edit()
+                .putString(PREF_READ_KEYS, builder.toString())
+                .apply();
+    }
+
+    private boolean isNotificationRead(String notificationKey) {
+        if (notificationKey == null || notificationKey.trim().isEmpty()) {
+            return false;
+        }
+
+        SharedPreferences prefs = getSharedPreferences(PREF_NOTIF, MODE_PRIVATE);
+        String readKeys = prefs.getString(PREF_READ_KEYS, "");
+
+        if (readKeys == null) {
+            readKeys = "";
+        }
+
+        return readKeys.contains("|" + notificationKey + "|");
+    }
+
+    private String getPriorityLabel(double value) {
+        if (value >= 80) {
+            return "High";
+        } else if (value >= 60) {
+            return "Medium";
+        } else {
+            return "Low";
+        }
+    }
+
+    private String formatNotificationTime(String timestamp) {
+        if (timestamp == null || timestamp.trim().isEmpty() || timestamp.equals("-")) {
+            return "-";
+        }
+
+        try {
+            String[] dateTime = timestamp.split(" ");
+
+            if (dateTime.length < 2) {
+                return timestamp;
+            }
+
+            String date = dateTime[0];
+            String time = dateTime[1];
+
+            String[] dateParts = date.split("-");
+            String[] timeParts = time.split(":");
+
+            if (dateParts.length < 3 || timeParts.length < 2) {
+                return timestamp;
+            }
+
+            int month = Integer.parseInt(dateParts[1]);
+            String day = dateParts[2];
+            String hour = timeParts[0];
+            String minute = timeParts[1];
+
+            String[] months = {
+                    "",
+                    "Jan",
+                    "Feb",
+                    "Mar",
+                    "Apr",
+                    "Mei",
+                    "Jun",
+                    "Jul",
+                    "Agu",
+                    "Sep",
+                    "Okt",
+                    "Nov",
+                    "Des"
+            };
+
+            String monthName = month >= 1 && month <= 12 ? months[month] : dateParts[1];
+
+            return day + " " + monthName + ", " + hour + "." + minute;
+
+        } catch (Exception e) {
+            return timestamp;
+        }
     }
 
     private void loadLatestCarouselImages() {
@@ -320,9 +778,9 @@ public class DashboardActivity extends AppCompatActivity {
                     }
                 }
 
-                updatePlantCard(leftPhoto, imgPlantLeft, tvPlantLeftTime, tvPlantLeftStatus, "Normal");
-                updatePlantCard(rightPhoto, imgPlantRight, tvPlantRightTime, tvPlantRightStatus, "Normal");
-                updatePlantCard(hpPhoto, imgPlantHp, tvPlantHpTime, tvPlantHpStatus, "Mobile");
+                updatePlantCard(leftPhoto, imgPlantLeft, tvPlantLeftTime, tvPlantLeftStatus, tvPlantLeftLabel, "Normal");
+                updatePlantCard(rightPhoto, imgPlantRight, tvPlantRightTime, tvPlantRightStatus, tvPlantRightLabel, "Normal");
+                updatePlantCard(hpPhoto, imgPlantHp, tvPlantHpTime, tvPlantHpStatus, tvPlantHpLabel, "Mobile");
             }
 
             @Override
@@ -337,12 +795,14 @@ public class DashboardActivity extends AppCompatActivity {
             ImageView imageView,
             TextView timeView,
             TextView statusView,
+            TextView sourceView,
             String defaultStatus
     ) {
         if (photo == null) {
             timeView.setText("Update: -");
             statusView.setText("Belum Ada");
             statusView.setTextColor(Color.parseColor("#667085"));
+            sourceView.setText("Sumber: -");
             return;
         }
 
@@ -356,9 +816,11 @@ public class DashboardActivity extends AppCompatActivity {
         timeView.setText("Update: " + photo.time);
 
         if (photo.label.equalsIgnoreCase("HP")) {
+            sourceView.setText("Sumber: Mobile");
             statusView.setText("Mobile");
             statusView.setTextColor(Color.parseColor("#2563EB"));
         } else {
+            sourceView.setText("Sumber: CCTV");
             statusView.setText(defaultStatus);
             statusView.setTextColor(Color.parseColor("#0B7A2A"));
         }
@@ -381,7 +843,6 @@ public class DashboardActivity extends AppCompatActivity {
                     Boolean handled = data.child("handled").getValue(Boolean.class);
                     String status = data.child("status").getValue(String.class);
 
-                    // Lewati data yang sudah ditangani
                     if (handled != null && handled) {
                         continue;
                     }
@@ -448,10 +909,8 @@ public class DashboardActivity extends AppCompatActivity {
                     tempAlerts.add(new DetectionAlertItem(detectionKey, alert));
                 }
 
-                // Urutkan terbaru di depan
                 Collections.reverse(tempAlerts);
 
-                // Tampilkan SEMUA yang belum handled
                 for (DetectionAlertItem item : tempAlerts) {
                     alertList.add(item.alert);
                     addAlertPanel(item.alert, item.detectionKey);
@@ -519,10 +978,6 @@ public class DashboardActivity extends AppCompatActivity {
                     tvHumidity.setText("--%");
                     tvHumidityStatus.setText("Tidak ada data");
                 }
-
-                tvActiveCamera.setText("1 Online");
-                tvPlantPoint.setText("2 Titik + HP");
-                tvPlantCondition.setText("Baik");
             }
 
             @Override
@@ -536,10 +991,10 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     private void setTemperatureStatus(double suhu) {
-        if (suhu < 20) {
+        if (suhu < 25) {
             tvTemperatureStatus.setText("Rendah");
             tvTemperatureStatus.setTextColor(Color.parseColor("#2563EB"));
-        } else if (suhu <= 32) {
+        } else if (suhu <= 28) {
             tvTemperatureStatus.setText("Normal");
             tvTemperatureStatus.setTextColor(Color.parseColor("#0B7A2A"));
         } else {
@@ -549,10 +1004,10 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     private void setHumidityStatus(double humidity) {
-        if (humidity < 50) {
+        if (humidity < 65) {
             tvHumidityStatus.setText("Rendah");
             tvHumidityStatus.setTextColor(Color.parseColor("#C4320A"));
-        } else if (humidity <= 85) {
+        } else if (humidity <= 78) {
             tvHumidityStatus.setText("Normal");
             tvHumidityStatus.setTextColor(Color.parseColor("#0B7A2A"));
         } else {
@@ -721,23 +1176,16 @@ public class DashboardActivity extends AppCompatActivity {
 
         diseaseResultRef.child(detectionKey)
                 .updateChildren(updates)
-                .addOnSuccessListener(unused -> {
-                    Toast.makeText(
-                            DashboardActivity.this,
-                            "Deteksi ditandai selesai",
-                            Toast.LENGTH_SHORT
-                    ).show();
-
-                    // Tidak perlu removeView manual.
-                    // Listener Firebase akan refresh dan menghilangkan card otomatis.
-                })
-                .addOnFailureListener(e -> {
-                    Toast.makeText(
-                            DashboardActivity.this,
-                            "Gagal update Firebase: " + e.getMessage(),
-                            Toast.LENGTH_LONG
-                    ).show();
-                });
+                .addOnSuccessListener(unused -> Toast.makeText(
+                        DashboardActivity.this,
+                        "Deteksi ditandai selesai",
+                        Toast.LENGTH_SHORT
+                ).show())
+                .addOnFailureListener(e -> Toast.makeText(
+                        DashboardActivity.this,
+                        "Gagal update Firebase: " + e.getMessage(),
+                        Toast.LENGTH_LONG
+                ).show());
     }
 
     private String getCurrentIsoTime() {
@@ -782,6 +1230,34 @@ public class DashboardActivity extends AppCompatActivity {
         DetectionAlertItem(String detectionKey, AlertPanel alert) {
             this.detectionKey = detectionKey;
             this.alert = alert;
+        }
+    }
+
+    private static class NotificationItem {
+        String notificationKey;
+        String icon;
+        String title;
+        String message;
+        String time;
+        String priority;
+        double value;
+
+        NotificationItem(
+                String notificationKey,
+                String icon,
+                String title,
+                String message,
+                String time,
+                String priority,
+                double value
+        ) {
+            this.notificationKey = notificationKey;
+            this.icon = icon;
+            this.title = title;
+            this.message = message;
+            this.time = time;
+            this.priority = priority;
+            this.value = value;
         }
     }
 }

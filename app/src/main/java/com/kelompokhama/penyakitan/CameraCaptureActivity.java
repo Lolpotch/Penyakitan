@@ -4,7 +4,10 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.widget.ImageView;
@@ -16,13 +19,16 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -44,12 +50,22 @@ public class CameraCaptureActivity extends AppCompatActivity {
     private final String bucketPublicUrl =
             "https://storage.googleapis.com/camerahama-test/mobile-captures/";
 
+    // Ubah angka ini kalau mau kualitas berbeda.
+    // 90 = kualitas lebih tinggi, ukuran lebih besar.
+    // 85 = seimbang.
+    // 75 = ukuran lebih kecil.
+    private static final int JPEG_UPLOAD_QUALITY = 85;
+
     private ImageView imgUploadPreview;
     private ProgressBar progressUpload;
     private TextView tvUploadStatus;
 
     private ActivityResultLauncher<String> permissionLauncher;
     private ActivityResultLauncher<Intent> cameraLauncher;
+
+    private Uri capturedImageUri;
+    private File capturedImageFile;
+    private String localFilename;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,7 +75,7 @@ public class CameraCaptureActivity extends AppCompatActivity {
                 new ActivityResultContracts.RequestPermission(),
                 isGranted -> {
                     if (isGranted) {
-                        openCamera();
+                        openCameraFullResolution();
                     } else {
                         Toast.makeText(
                                 this,
@@ -74,27 +90,14 @@ public class CameraCaptureActivity extends AppCompatActivity {
         cameraLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                        Bundle extras = result.getData().getExtras();
-
-                        if (extras != null) {
-                            Bitmap imageBitmap = (Bitmap) extras.get("data");
-
-                            if (imageBitmap != null) {
-                                showUploadScreen(imageBitmap);
-                                uploadToCloud(imageBitmap);
-                            } else {
-                                Toast.makeText(
-                                        this,
-                                        "Gambar gagal diambil",
-                                        Toast.LENGTH_SHORT
-                                ).show();
-                                finish();
-                            }
+                    if (result.getResultCode() == RESULT_OK) {
+                        if (capturedImageFile != null && capturedImageFile.exists()) {
+                            showUploadScreen(capturedImageUri);
+                            uploadToCloud(capturedImageFile);
                         } else {
                             Toast.makeText(
                                     this,
-                                    "Data gambar kosong",
+                                    "File gambar tidak ditemukan",
                                     Toast.LENGTH_SHORT
                             ).show();
                             finish();
@@ -105,6 +108,8 @@ public class CameraCaptureActivity extends AppCompatActivity {
                                 "Capture dibatalkan",
                                 Toast.LENGTH_SHORT
                         ).show();
+
+                        deleteTempImageIfExists();
                         finish();
                     }
                 }
@@ -113,32 +118,57 @@ public class CameraCaptureActivity extends AppCompatActivity {
         checkCameraPermission();
     }
 
-    private void showUploadScreen(Bitmap bitmap) {
+    private void showUploadScreen(Uri imageUri) {
         setContentView(R.layout.activity_camera_capture);
 
         imgUploadPreview = findViewById(R.id.imgUploadPreview);
         progressUpload = findViewById(R.id.progressUpload);
         tvUploadStatus = findViewById(R.id.tvUploadStatus);
 
-        imgUploadPreview.setImageBitmap(bitmap);
+        imgUploadPreview.setImageURI(imageUri);
         progressUpload.setIndeterminate(true);
-        tvUploadStatus.setText("Upload sedang diproses...");
+        tvUploadStatus.setText("Upload foto sedang diproses...");
     }
 
     private void checkCameraPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
-            openCamera();
+            openCameraFullResolution();
         } else {
             permissionLauncher.launch(Manifest.permission.CAMERA);
         }
     }
 
-    private void openCamera() {
+    private void openCameraFullResolution() {
         Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
 
         if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
-            cameraLauncher.launch(takePictureIntent);
+            try {
+                capturedImageFile = createImageFile();
+
+                capturedImageUri = FileProvider.getUriForFile(
+                        this,
+                        getPackageName() + ".fileprovider",
+                        capturedImageFile
+                );
+
+                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, capturedImageUri);
+                takePictureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                takePictureIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                cameraLauncher.launch(takePictureIntent);
+
+            } catch (Exception e) {
+                Log.e("CAMERA_ERROR", "Gagal membuka kamera: " + e.getMessage());
+
+                Toast.makeText(
+                        this,
+                        "Gagal membuka kamera: " + e.getMessage(),
+                        Toast.LENGTH_LONG
+                ).show();
+
+                finish();
+            }
         } else {
             Toast.makeText(
                     this,
@@ -149,23 +179,57 @@ public class CameraCaptureActivity extends AppCompatActivity {
         }
     }
 
-    private void uploadToCloud(Bitmap bitmap) {
+    private File createImageFile() {
+        long uploadedAt = System.currentTimeMillis() / 1000;
+        localFilename = "HP_" + uploadedAt + ".jpg";
+
+        File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+
+        if (storageDir == null) {
+            storageDir = getFilesDir();
+        }
+
+        return new File(storageDir, localFilename);
+    }
+
+    private void uploadToCloud(File imageFile) {
         new Thread(() -> {
             HttpURLConnection conn = null;
 
             try {
                 runOnUiThread(() -> {
                     if (tvUploadStatus != null) {
-                        tvUploadStatus.setText("Mengirim foto ke server...");
+                        tvUploadStatus.setText("Mengompres foto untuk upload...");
                     }
                 });
 
                 long uploadedAt = System.currentTimeMillis() / 1000;
-                String localFilename = "HP_" + uploadedAt + ".jpg";
 
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, baos);
-                byte[] imageBytes = baos.toByteArray();
+                if (localFilename == null || localFilename.trim().isEmpty()) {
+                    localFilename = imageFile.getName();
+                }
+
+                long originalSize = imageFile.length();
+
+                Log.d("IMAGE_COMPRESS", "Original filename: " + localFilename);
+                Log.d("IMAGE_COMPRESS", "Original size bytes: " + originalSize);
+                Log.d("IMAGE_COMPRESS", "Original size KB: " + (originalSize / 1024));
+
+                compressImageFileInPlace(imageFile, JPEG_UPLOAD_QUALITY);
+
+                long compressedSize = imageFile.length();
+
+                Log.d("IMAGE_COMPRESS", "Compressed quality: " + JPEG_UPLOAD_QUALITY);
+                Log.d("IMAGE_COMPRESS", "Compressed size bytes: " + compressedSize);
+                Log.d("IMAGE_COMPRESS", "Compressed size KB: " + (compressedSize / 1024));
+
+                runOnUiThread(() -> {
+                    if (tvUploadStatus != null) {
+                        tvUploadStatus.setText("Mengirim foto ke server...");
+                    }
+                });
+
+                byte[] imageBytes = readFileBytes(imageFile);
 
                 String boundary = "----Boundary123456789";
                 URL url = new URL(functionUrl);
@@ -174,8 +238,8 @@ public class CameraCaptureActivity extends AppCompatActivity {
                 conn.setRequestMethod("POST");
                 conn.setDoOutput(true);
                 conn.setUseCaches(false);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(15000);
+                conn.setConnectTimeout(30000);
+                conn.setReadTimeout(30000);
 
                 conn.setRequestProperty(
                         "Content-Type",
@@ -225,6 +289,7 @@ public class CameraCaptureActivity extends AppCompatActivity {
 
                 int finalResponseCode = responseCode;
                 String finalResponseMessage = responseMessage;
+                Uri finalImageUri = capturedImageUri;
 
                 runOnUiThread(() -> {
                     if (tvUploadStatus != null) {
@@ -235,18 +300,20 @@ public class CameraCaptureActivity extends AppCompatActivity {
                         }
                     }
 
-                    openDetectionResult(bitmap, finalResponseCode, finalResponseMessage);
+                    openDetectionResult(finalImageUri, finalResponseCode, finalResponseMessage);
                 });
 
             } catch (Exception e) {
                 Log.e("UPLOAD_ERROR", e.toString());
+
+                Uri finalImageUri = capturedImageUri;
 
                 runOnUiThread(() -> {
                     if (tvUploadStatus != null) {
                         tvUploadStatus.setText("Terjadi error, membuka hasil...");
                     }
 
-                    openDetectionResult(bitmap, 0, e.getMessage());
+                    openDetectionResult(finalImageUri, 0, e.getMessage());
                 });
 
             } finally {
@@ -255,6 +322,51 @@ public class CameraCaptureActivity extends AppCompatActivity {
                 }
             }
         }).start();
+    }
+
+    private void compressImageFileInPlace(File imageFile, int quality) throws Exception {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+
+        Bitmap bitmap = BitmapFactory.decodeFile(
+                imageFile.getAbsolutePath(),
+                options
+        );
+
+        if (bitmap == null) {
+            throw new Exception("Gagal decode gambar untuk kompresi");
+        }
+
+        FileOutputStream fos = new FileOutputStream(imageFile, false);
+
+        bitmap.compress(
+                Bitmap.CompressFormat.JPEG,
+                quality,
+                fos
+        );
+
+        fos.flush();
+        fos.close();
+
+        bitmap.recycle();
+    }
+
+    private byte[] readFileBytes(File file) throws Exception {
+        FileInputStream fis = new FileInputStream(file);
+
+        byte[] bytes = new byte[(int) file.length()];
+
+        int totalRead = 0;
+        int read;
+
+        while (totalRead < bytes.length &&
+                (read = fis.read(bytes, totalRead, bytes.length - totalRead)) != -1) {
+            totalRead += read;
+        }
+
+        fis.close();
+
+        return bytes;
     }
 
     private String readResponse(HttpURLConnection conn, int responseCode) {
@@ -363,6 +475,7 @@ public class CameraCaptureActivity extends AppCompatActivity {
         data.put("filename", filename);
         data.put("image", imageUrl);
         data.put("label", "HP");
+        data.put("source", "HP");
         data.put("time", timeText);
         data.put("uploaded_at", uploadedAt);
 
@@ -393,17 +506,30 @@ public class CameraCaptureActivity extends AppCompatActivity {
                 });
     }
 
-    private void openDetectionResult(Bitmap bitmap, int responseCode, String responseMessage) {
+    private void openDetectionResult(Uri imageUri, int responseCode, String responseMessage) {
         Intent intent = new Intent(
                 CameraCaptureActivity.this,
                 DetectionResultActivity.class
         );
 
-        intent.putExtra("image", bitmap);
+        if (imageUri != null) {
+            intent.putExtra("image_uri", imageUri.toString());
+        }
+
         intent.putExtra("responseCode", responseCode);
         intent.putExtra("responseMessage", responseMessage);
 
         startActivity(intent);
         finish();
+    }
+
+    private void deleteTempImageIfExists() {
+        try {
+            if (capturedImageFile != null && capturedImageFile.exists()) {
+                capturedImageFile.delete();
+            }
+        } catch (Exception e) {
+            Log.e("DELETE_TEMP", "Gagal hapus file: " + e.getMessage());
+        }
     }
 }

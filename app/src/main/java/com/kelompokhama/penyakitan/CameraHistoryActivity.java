@@ -110,7 +110,25 @@ public class CameraHistoryActivity extends AppCompatActivity {
                         time = "-";
                     }
 
-                    allImages.add(new CameraImage(filename, imageUrl, time));
+                    String source = data.child("source").getValue(String.class);
+
+                    if (source == null || source.trim().isEmpty()) {
+                        if (label.equalsIgnoreCase("HP")) {
+                            source = "HP";
+                        } else {
+                            source = "CCTV";
+                        }
+                    }
+
+                    allImages.add(
+                            new CameraImage(
+                                    filename,
+                                    imageUrl,
+                                    time,
+                                    label,
+                                    source
+                            )
+                    );
 
                     if (isToday(uploadedAt)) {
                         todayCount++;
