@@ -1,9 +1,12 @@
 package com.kelompokhama.penyakitan;
 
+import android.content.Context;
+import android.content.Intent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -14,47 +17,66 @@ import java.util.List;
 
 public class CameraAdapter extends RecyclerView.Adapter<CameraAdapter.ViewHolder> {
 
-    List<CameraImage> images;
+    private final List<CameraImage> imageList;
 
-    public CameraAdapter(List<CameraImage> images){
-        this.images = images;
-    }
-
-    public static class ViewHolder extends RecyclerView.ViewHolder {
-
-        ImageView imgCamera;
-
-        public ViewHolder(View v){
-            super(v);
-            imgCamera = v.findViewById(R.id.imgCamera);
-        }
+    public CameraAdapter(List<CameraImage> imageList) {
+        this.imageList = imageList;
     }
 
     @NonNull
     @Override
-    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType){
-
-        View view = LayoutInflater.from(parent.getContext())
+    public CameraAdapter.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        View view = LayoutInflater
+                .from(parent.getContext())
                 .inflate(R.layout.item_camera_image, parent, false);
 
         return new ViewHolder(view);
     }
 
     @Override
-    public void onBindViewHolder(@NonNull ViewHolder holder, int position){
+    public void onBindViewHolder(@NonNull CameraAdapter.ViewHolder holder, int position) {
+        CameraImage image = imageList.get(position);
 
-        CameraImage img = images.get(position);
+        holder.tvFileName.setText(image.getFileName());
+        holder.tvDate.setText(image.getUpdated());
 
         Glide.with(holder.itemView.getContext())
-                .load(img.imageURL)
-                .placeholder(R.drawable.ic_launcher_background)
-                .error(R.drawable.ic_launcher_foreground)
+                .load(image.getImageUrl())
                 .centerCrop()
+                .placeholder(R.drawable.plant)
+                .error(R.drawable.plant)
                 .into(holder.imgCamera);
+
+        holder.itemView.setOnClickListener(v -> {
+            Context context = holder.itemView.getContext();
+
+            Intent intent = new Intent(context, ImagePreviewActivity.class);
+            intent.putExtra("image_url", image.getImageUrl());
+            intent.putExtra("filename", image.getFileName());
+            intent.putExtra("time", image.getUpdated());
+            intent.putExtra("label", image.getLabel());
+            intent.putExtra("source", image.getSource());
+
+            context.startActivity(intent);
+        });
     }
 
     @Override
-    public int getItemCount(){
-        return images.size();
+    public int getItemCount() {
+        return imageList.size();
+    }
+
+    public static class ViewHolder extends RecyclerView.ViewHolder {
+
+        ImageView imgCamera;
+        TextView tvFileName, tvDate;
+
+        public ViewHolder(@NonNull View itemView) {
+            super(itemView);
+
+            imgCamera = itemView.findViewById(R.id.imgCamera);
+            tvFileName = itemView.findViewById(R.id.tvFileName);
+            tvDate = itemView.findViewById(R.id.tvDate);
+        }
     }
 }

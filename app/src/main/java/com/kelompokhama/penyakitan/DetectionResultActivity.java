@@ -1,6 +1,7 @@
 package com.kelompokhama.penyakitan;
 
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -28,13 +29,31 @@ public class DetectionResultActivity extends AppCompatActivity {
         btnClose = findViewById(R.id.btnClose);
         txtStatus = findViewById(R.id.txtStatus);
 
-        Bitmap image = getIntent().getParcelableExtra("image");
+        String imageUriString = getIntent().getStringExtra("image_uri");
 
-        if (image != null) {
-            imgResult.setImageBitmap(image);
+        if (imageUriString != null && !imageUriString.trim().isEmpty()) {
+            Uri imageUri = Uri.parse(imageUriString);
+            imgResult.setImageURI(imageUri);
+        } else {
+            Bitmap image = getIntent().getParcelableExtra("image");
+
+            if (image != null) {
+                imgResult.setImageBitmap(image);
+            }
         }
 
-        txtStatus.setVisibility(View.GONE);
+        int responseCode = getIntent().getIntExtra("responseCode", -1);
+        String responseMessage = getIntent().getStringExtra("responseMessage");
+
+        if (responseCode == 200 || responseCode == 201) {
+            txtStatus.setVisibility(View.VISIBLE);
+            txtStatus.setText("Upload Success");
+        } else if (responseCode != -1) {
+            txtStatus.setVisibility(View.VISIBLE);
+            txtStatus.setText("Upload Failed: " + responseMessage);
+        } else {
+            txtStatus.setVisibility(View.GONE);
+        }
 
         btnClose.setOnClickListener(v -> finish());
     }
@@ -49,7 +68,6 @@ public class DetectionResultActivity extends AppCompatActivity {
     }
 
     public static void showUploadError(String message) {
-
         if (instance == null) return;
 
         instance.runOnUiThread(() -> {
@@ -59,7 +77,6 @@ public class DetectionResultActivity extends AppCompatActivity {
     }
 
     public static void showUploadSuccess(String message) {
-
         if (instance == null) return;
 
         instance.runOnUiThread(() -> {

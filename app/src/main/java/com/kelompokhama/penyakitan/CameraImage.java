@@ -2,14 +2,45 @@ package com.kelompokhama.penyakitan;
 
 public class CameraImage {
 
-    public String cameraID;
-    public String imageURL;
-    public String date;
+    private String fileName;
+    private String imageUrl;
+    private String updated;
+    private String label;
+    private String source;
 
-    public CameraImage(String cameraID, String imageURL, String date){
-        this.cameraID = cameraID;
-        this.imageURL = imageURL;
-        this.date = date;
+    public CameraImage(String fileName, String imageUrl, String updated) {
+        this.fileName = fileName;
+        this.imageUrl = imageUrl;
+        this.updated = updated;
+        this.label = "";
+        this.source = "";
     }
 
+    public CameraImage(String fileName, String imageUrl, String updated, String label, String source) {
+        this.fileName = fileName;
+        this.imageUrl = imageUrl;
+        this.updated = updated;
+        this.label = label;
+        this.source = source;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public String getUpdated() {
+        return updated;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public String getSource() {
+        return source;
+    }
 }

@@ -1,24 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#2E7D32">
+    android:background="#F6FAF4">
 
+    <!-- Background gambar selada -->
     <ImageView
-        android:id="@+id/logo"
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:src="@mipmap/ic_launcher"
-        android:layout_centerInParent="true"/>
+        android:id="@+id/imgSplashBackground"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0.38"
+        android:scaleType="centerCrop"
+        android:src="@drawable/plant" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Plant Disease Detection"
-        android:textSize="18sp"
-        android:textColor="#FFFFFF"
-        android:layout_below="@id/logo"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="20dp"/>
+    <!-- Overlay putih kehijauan -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#B8F6FAF4" />
 
-</RelativeLayout>
+    <!-- Konten tengah -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingStart="32dp"
+        android:paddingEnd="32dp">
+
+        <ImageView
+            android:id="@+id/imgSplashLogo"
+            android:layout_width="190dp"
+            android:layout_height="190dp"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:src="@drawable/mipmap03" />
+
+        <View
+            android:layout_width="150dp"
+            android:layout_height="4dp"
+            android:layout_marginTop="130dp"
+            android:background="@drawable/bg_splash_line" />
+
+    </LinearLayout>
+
+</FrameLayout>
