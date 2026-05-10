@@ -1,4 +1,4 @@
-package com.example.penyakitan;
+package com.kelompokhama.penyakitan;
 
 import android.app.Dialog;
 import android.content.Intent;

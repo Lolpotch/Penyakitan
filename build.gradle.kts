@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.penyakitan"
+    namespace = "com.kelompokhama.penyakitan"
     compileSdk = 34
 
     defaultConfig {

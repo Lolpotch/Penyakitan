@@ -1,4 +1,4 @@
-package com.example.penyakitan;
+package com.kelompokhama.penyakitan;
 
 import android.graphics.Bitmap;
 import android.net.Uri;
