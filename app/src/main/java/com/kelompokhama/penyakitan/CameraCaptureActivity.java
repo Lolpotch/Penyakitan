@@ -1,5 +1,6 @@
 package com.kelompokhama.penyakitan;
 
+
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Bundle;
@@ -144,29 +145,53 @@ public class CameraCaptureActivity extends AppCompatActivity {
                 os.flush();
                 os.close();
 
-                int responseCode =
-                        conn.getResponseCode();
+                int responseCode = conn.getResponseCode();
+
+                String responseMessage;
+
+                if (responseCode >= 200 && responseCode < 300) {
+
+                    responseMessage = "Upload Success";
+
+                } else {
+
+                    java.io.InputStream errorStream =
+                            conn.getErrorStream();
+
+                    if (errorStream == null) {
+                        errorStream = conn.getInputStream();
+                    }
+
+                    java.io.BufferedReader reader =
+                            new java.io.BufferedReader(
+                                    new java.io.InputStreamReader(errorStream)
+                            );
+
+                    StringBuilder errorText =
+                            new StringBuilder();
+
+                    String line;
+
+                    while ((line = reader.readLine()) != null) {
+                        errorText.append(line);
+                    }
+
+                    reader.close();
+
+                    responseMessage = errorText.toString();
+
+                    // showUploadError(errorText.toString());
+                }
+
+                String finalResponseMessage = responseMessage;
 
                 runOnUiThread(() -> {
 
-                    if (responseCode == 200
-                            || responseCode == 201) {
-
-                        Toast.makeText(
-                                CameraCaptureActivity.this,
-                                "Upload Success",
-                                Toast.LENGTH_SHORT
-                        ).show();
-
-                    } else {
-
-                        Toast.makeText(
-                                CameraCaptureActivity.this,
-                                "Upload Failed: "
-                                        + responseCode,
-                                Toast.LENGTH_LONG
-                        ).show();
-                    }
+                    Toast.makeText(
+                            CameraCaptureActivity.this,
+                            finalResponseMessage,
+                            Toast.LENGTH_LONG
+                    ).show();
 
                     openDetectionResult(bitmap);
                 });
