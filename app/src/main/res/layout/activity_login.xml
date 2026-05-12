@@ -26,7 +26,7 @@
                 android:layout_height="72dp"
                 android:adjustViewBounds="true"
                 android:scaleType="fitCenter"
-                android:src="@drawable/mipmap04" />
+                android:src="@drawable/mipmap10" />
 
             <TextView
                 android:layout_width="wrap_content"

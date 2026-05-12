@@ -1,4 +1,4 @@
-package com.kelompokhama.penyakitan;
+package com.example.penyakitan;
 
 import android.os.Bundle;
 import android.util.Log;

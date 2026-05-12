@@ -1,4 +1,4 @@
-package com.kelompokhama.penyakitan;
+package com.example.penyakitan;
 
 import android.Manifest;
 import android.content.Intent;
@@ -21,9 +21,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
-import com.google.firebase.database.DatabaseReference;
-import com.google.firebase.database.FirebaseDatabase;
-
 import org.json.JSONObject;
 
 import java.io.File;
@@ -33,27 +30,31 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
+import java.net.URLEncoder;
 
 public class CameraCaptureActivity extends AppCompatActivity {
 
+    // =========================
+    // API UPLOAD FOTO HP KE GCS
+    // =========================
     private final String functionUrl =
             "https://mobile-camera-upload-picture-990423897913.europe-west1.run.app";
 
-    private final String firebaseDbUrl =
-            "https://hama-99a97-default-rtdb.asia-southeast1.firebasedatabase.app";
+    // =========================
+    // API ML INFERENCE
+    // GANTI URL INI DENGAN URL CLOUD RUN ML KAMU
+    // Harus endpoint /predict
+    // =========================
+    private final String inferenceApiUrl =
+            "https://lokasight-inference-api-990423897913.asia-southeast2.run.app/predict";
 
+    // =========================
+    // FALLBACK PUBLIC URL
+    // Dipakai kalau response upload tidak mengirim image_url
+    // =========================
     private final String bucketPublicUrl =
             "https://storage.googleapis.com/camerahama-test/mobile-captures/";
 
-    // Ubah angka ini kalau mau kualitas berbeda.
-    // 90 = kualitas lebih tinggi, ukuran lebih besar.
-    // 85 = seimbang.
-    // 75 = ukuran lebih kecil.
     private static final int JPEG_UPLOAD_QUALITY = 85;
 
     private ImageView imgUploadPreview;
@@ -66,6 +67,8 @@ public class CameraCaptureActivity extends AppCompatActivity {
     private Uri capturedImageUri;
     private File capturedImageFile;
     private String localFilename;
+
+    private int lastHttpResponseCode = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -93,7 +96,7 @@ public class CameraCaptureActivity extends AppCompatActivity {
                     if (result.getResultCode() == RESULT_OK) {
                         if (capturedImageFile != null && capturedImageFile.exists()) {
                             showUploadScreen(capturedImageUri);
-                            uploadToCloud(capturedImageFile);
+                            uploadThenInference(capturedImageFile);
                         } else {
                             Toast.makeText(
                                     this,
@@ -127,7 +130,7 @@ public class CameraCaptureActivity extends AppCompatActivity {
 
         imgUploadPreview.setImageURI(imageUri);
         progressUpload.setIndeterminate(true);
-        tvUploadStatus.setText("Upload foto sedang diproses...");
+        tvUploadStatus.setText("Foto sedang diproses...");
     }
 
     private void checkCameraPermission() {
@@ -192,9 +195,9 @@ public class CameraCaptureActivity extends AppCompatActivity {
         return new File(storageDir, localFilename);
     }
 
-    private void uploadToCloud(File imageFile) {
+    private void uploadThenInference(File imageFile) {
         new Thread(() -> {
-            HttpURLConnection conn = null;
+            final Uri finalImageUri = capturedImageUri;
 
             try {
                 runOnUiThread(() -> {
@@ -202,8 +205,6 @@ public class CameraCaptureActivity extends AppCompatActivity {
                         tvUploadStatus.setText("Mengompres foto untuk upload...");
                     }
                 });
-
-                long uploadedAt = System.currentTimeMillis() / 1000;
 
                 if (localFilename == null || localFilename.trim().isEmpty()) {
                     localFilename = imageFile.getName();
@@ -225,103 +226,186 @@ public class CameraCaptureActivity extends AppCompatActivity {
 
                 runOnUiThread(() -> {
                     if (tvUploadStatus != null) {
-                        tvUploadStatus.setText("Mengirim foto ke server...");
+                        tvUploadStatus.setText("Mengupload foto ke server...");
                     }
                 });
 
-                byte[] imageBytes = readFileBytes(imageFile);
+                String uploadResponse = uploadImageFile(imageFile);
+                int uploadResponseCode = lastHttpResponseCode;
 
-                String boundary = "----Boundary123456789";
-                URL url = new URL(functionUrl);
+                Log.d("UPLOAD_RESPONSE", "Code: " + uploadResponseCode);
+                Log.d("UPLOAD_RESPONSE", "Response: " + uploadResponse);
 
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setDoOutput(true);
-                conn.setUseCaches(false);
-                conn.setConnectTimeout(30000);
-                conn.setReadTimeout(30000);
+                if (uploadResponseCode != 200 && uploadResponseCode != 201) {
+                    runOnUiThread(() -> {
+                        if (tvUploadStatus != null) {
+                            tvUploadStatus.setText("Upload gagal, membuka hasil...");
+                        }
 
-                conn.setRequestProperty(
-                        "Content-Type",
-                        "multipart/form-data; boundary=" + boundary
-                );
+                        openDetectionResult(
+                                finalImageUri,
+                                uploadResponseCode,
+                                uploadResponse
+                        );
+                    });
 
-                OutputStream os = conn.getOutputStream();
-
-                os.write(("--" + boundary + "\r\n").getBytes());
-
-                os.write((
-                        "Content-Disposition: form-data; " +
-                                "name=\"file\"; " +
-                                "filename=\"" + localFilename + "\"\r\n"
-                ).getBytes());
-
-                os.write("Content-Type: image/jpeg\r\n\r\n".getBytes());
-                os.write(imageBytes);
-                os.write("\r\n".getBytes());
-
-                os.write(("--" + boundary + "--\r\n").getBytes());
-
-                os.flush();
-                os.close();
-
-                int responseCode = conn.getResponseCode();
-                String responseMessage = readResponse(conn, responseCode);
-
-                Log.d("UPLOAD_RESPONSE", "Code: " + responseCode);
-                Log.d("UPLOAD_RESPONSE", "Response: " + responseMessage);
-
-                if (responseCode == 200 || responseCode == 201) {
-                    String serverFilename = extractFilenameFromResponse(responseMessage);
-
-                    if (serverFilename == null || serverFilename.trim().isEmpty()) {
-                        serverFilename = localFilename;
-                    }
-
-                    String uploadedImageUrl = extractImageUrlFromResponse(responseMessage);
-
-                    if (uploadedImageUrl == null || uploadedImageUrl.trim().isEmpty()) {
-                        uploadedImageUrl = bucketPublicUrl + serverFilename;
-                    }
-
-                    saveHpCaptureToFirebase(serverFilename, uploadedImageUrl, uploadedAt);
+                    return;
                 }
 
-                int finalResponseCode = responseCode;
-                String finalResponseMessage = responseMessage;
-                Uri finalImageUri = capturedImageUri;
+                String serverFilename = extractFilenameFromResponse(uploadResponse);
+
+                if (serverFilename == null || serverFilename.trim().isEmpty()) {
+                    serverFilename = localFilename;
+                }
+
+                String uploadedImageUrl = extractImageUrlFromResponse(uploadResponse);
+
+                if (uploadedImageUrl == null || uploadedImageUrl.trim().isEmpty()) {
+                    uploadedImageUrl = bucketPublicUrl + serverFilename;
+                }
+
+                Log.d("UPLOAD_IMAGE_URL", uploadedImageUrl);
 
                 runOnUiThread(() -> {
                     if (tvUploadStatus != null) {
-                        if (finalResponseCode == 200 || finalResponseCode == 201) {
-                            tvUploadStatus.setText("Upload berhasil, membuka hasil...");
+                        tvUploadStatus.setText("Upload berhasil, menjalankan inference...");
+                    }
+                });
+
+                String inferenceResponse = runInferenceFromImageUrl(uploadedImageUrl);
+                int inferenceResponseCode = lastHttpResponseCode;
+
+                Log.d("INFERENCE_RESPONSE", "Code: " + inferenceResponseCode);
+                Log.d("INFERENCE_RESPONSE", "Response: " + inferenceResponse);
+
+                runOnUiThread(() -> {
+                    if (tvUploadStatus != null) {
+                        if (inferenceResponseCode == 200 || inferenceResponseCode == 201) {
+                            tvUploadStatus.setText("Inference berhasil, membuka hasil...");
                         } else {
-                            tvUploadStatus.setText("Upload gagal, membuka hasil...");
+                            tvUploadStatus.setText("Inference gagal, membuka hasil...");
                         }
                     }
 
-                    openDetectionResult(finalImageUri, finalResponseCode, finalResponseMessage);
+                    openDetectionResult(
+                            finalImageUri,
+                            inferenceResponseCode,
+                            inferenceResponse
+                    );
                 });
 
             } catch (Exception e) {
-                Log.e("UPLOAD_ERROR", e.toString());
+                Log.e("UPLOAD_INFERENCE_ERROR", e.toString());
 
-                Uri finalImageUri = capturedImageUri;
+                String errorJson = "{"
+                        + "\"error\":\"Terjadi error saat upload atau inference\","
+                        + "\"detail\":\"" + safeJsonText(e.getMessage()) + "\""
+                        + "}";
 
                 runOnUiThread(() -> {
                     if (tvUploadStatus != null) {
                         tvUploadStatus.setText("Terjadi error, membuka hasil...");
                     }
 
-                    openDetectionResult(finalImageUri, 0, e.getMessage());
+                    openDetectionResult(finalImageUri, 0, errorJson);
                 });
-
-            } finally {
-                if (conn != null) {
-                    conn.disconnect();
-                }
             }
         }).start();
+    }
+
+    private String uploadImageFile(File imageFile) throws Exception {
+        HttpURLConnection conn = null;
+
+        try {
+            String boundary = "----Boundary123456789";
+            URL url = new URL(functionUrl);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setUseCaches(false);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(30000);
+
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "multipart/form-data; boundary=" + boundary
+            );
+
+            OutputStream os = conn.getOutputStream();
+
+            os.write(("--" + boundary + "\r\n").getBytes());
+
+            os.write((
+                    "Content-Disposition: form-data; " +
+                            "name=\"file\"; " +
+                            "filename=\"" + localFilename + "\"\r\n"
+            ).getBytes());
+
+            os.write("Content-Type: image/jpeg\r\n\r\n".getBytes());
+
+            writeFileToOutputStream(imageFile, os);
+
+            os.write("\r\n".getBytes());
+            os.write(("--" + boundary + "--\r\n").getBytes());
+
+            os.flush();
+            os.close();
+
+            lastHttpResponseCode = conn.getResponseCode();
+
+            return readResponse(conn, lastHttpResponseCode);
+
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private String runInferenceFromImageUrl(String imageUrl) throws Exception {
+        HttpURLConnection conn = null;
+
+        try {
+            /*
+             * Untuk HP/mobile pakai:
+             * mode=auto  -> disease + pest
+             * source=mobile -> supaya tidak dipaksa disease saja
+             */
+            String query = "?mode=auto&source=mobile";
+            URL url = new URL(inferenceApiUrl + query);
+
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setUseCaches(false);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+
+            conn.setRequestProperty(
+                    "Content-Type",
+                    "application/x-www-form-urlencoded; charset=UTF-8"
+            );
+
+            String formData = "image_url=" + URLEncoder.encode(
+                    imageUrl,
+                    "UTF-8"
+            );
+
+            OutputStream os = conn.getOutputStream();
+            os.write(formData.getBytes("UTF-8"));
+            os.flush();
+            os.close();
+
+            lastHttpResponseCode = conn.getResponseCode();
+
+            return readResponse(conn, lastHttpResponseCode);
+
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
     }
 
     private void compressImageFileInPlace(File imageFile, int quality) throws Exception {
@@ -351,22 +435,17 @@ public class CameraCaptureActivity extends AppCompatActivity {
         bitmap.recycle();
     }
 
-    private byte[] readFileBytes(File file) throws Exception {
+    private void writeFileToOutputStream(File file, OutputStream outputStream) throws Exception {
         FileInputStream fis = new FileInputStream(file);
 
-        byte[] bytes = new byte[(int) file.length()];
+        byte[] buffer = new byte[8192];
+        int bytesRead;
 
-        int totalRead = 0;
-        int read;
-
-        while (totalRead < bytes.length &&
-                (read = fis.read(bytes, totalRead, bytes.length - totalRead)) != -1) {
-            totalRead += read;
+        while ((bytesRead = fis.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, bytesRead);
         }
 
         fis.close();
-
-        return bytes;
     }
 
     private String readResponse(HttpURLConnection conn, int responseCode) {
@@ -412,6 +491,10 @@ public class CameraCaptureActivity extends AppCompatActivity {
                 return json.optString("filename", "");
             }
 
+            if (json.has("name")) {
+                return json.optString("name", "");
+            }
+
         } catch (Exception e) {
             Log.e("PARSE_RESPONSE", "Gagal ambil filename: " + e.getMessage());
         }
@@ -454,56 +537,16 @@ public class CameraCaptureActivity extends AppCompatActivity {
         return "";
     }
 
-    private void saveHpCaptureToFirebase(String filename, String imageUrl, long uploadedAt) {
-        DatabaseReference ref = FirebaseDatabase
-                .getInstance(firebaseDbUrl)
-                .getReference("camera_captures");
-
-        String key = ref.push().getKey();
-
-        if (key == null) {
-            Log.e("FIREBASE_SAVE", "Key Firebase null");
-            return;
+    private String safeJsonText(String text) {
+        if (text == null) {
+            return "";
         }
 
-        String timeText = new SimpleDateFormat(
-                "dd MMM yyyy - HH:mm:ss",
-                new Locale("id", "ID")
-        ).format(new Date(uploadedAt * 1000));
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("filename", filename);
-        data.put("image", imageUrl);
-        data.put("label", "HP");
-        data.put("source", "HP");
-        data.put("time", timeText);
-        data.put("uploaded_at", uploadedAt);
-
-        Log.d("FIREBASE_SAVE", "Menyimpan data: " + data.toString());
-
-        ref.child(key).setValue(data)
-                .addOnSuccessListener(unused -> {
-                    Log.d("FIREBASE_SAVE", "Berhasil simpan ke Firebase: " + key);
-
-                    runOnUiThread(() ->
-                            Toast.makeText(
-                                    CameraCaptureActivity.this,
-                                    "Data HP tersimpan ke Firebase",
-                                    Toast.LENGTH_SHORT
-                            ).show()
-                    );
-                })
-                .addOnFailureListener(e -> {
-                    Log.e("FIREBASE_SAVE", "Gagal simpan Firebase: " + e.getMessage());
-
-                    runOnUiThread(() ->
-                            Toast.makeText(
-                                    CameraCaptureActivity.this,
-                                    "Gagal simpan Firebase: " + e.getMessage(),
-                                    Toast.LENGTH_LONG
-                            ).show()
-                    );
-                });
+        return text
+                .replace("\\", "\\\\")
+                .replace("\"", "'")
+                .replace("\n", " ")
+                .replace("\r", " ");
     }
 
     private void openDetectionResult(Uri imageUri, int responseCode, String responseMessage) {
